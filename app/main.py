@@ -8,9 +8,9 @@ app = FastAPI()
 
 
 @app.get("/db-test")
-def db_test():
+async def db_test():
     try:
-        with engine.connect() as connection:
+        async with engine.connect() as connection:
             return {"database": "connected"}
     except Exception as e:
         return {"database": "connection failed", "error": str(e)}
@@ -18,4 +18,4 @@ def db_test():
 
 @app.get("/table")
 def root():
-    return {"message": "API is running"}
+    return {"message": "API is runningg"}
