@@ -1,4 +1,6 @@
+import logging
 from collections.abc import AsyncGenerator
+from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -9,11 +11,22 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
-DATABASE_URL = settings.DATABASE_URL.replace(
-    "postgresql://",
-    "postgresql+asyncpg://",
-)
+
+# ---------------------------------------------------------------------------
+# Async database URL
+# ---------------------------------------------------------------------------
+
+def _make_async_url(url: str) -> str:
+    """Convert a standard postgresql:// URL to postgresql+asyncpg://."""
+    parsed = urlparse(url)
+    if parsed.scheme == "postgresql":
+        return urlunparse(parsed._replace(scheme="postgresql+asyncpg"))
+    return url
+
+
+DATABASE_URL = _make_async_url(settings.DATABASE_URL)
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -30,10 +43,26 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
-        yield session
+# ---------------------------------------------------------------------------
+# Session dependency
+# ---------------------------------------------------------------------------
 
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Yield an async session. Rolls back on any unhandled exception so
+    partially-written data never leaks into the database.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+
+
+# ---------------------------------------------------------------------------
+# Base model
+# ---------------------------------------------------------------------------
 
 class Base(DeclarativeBase):
     pass

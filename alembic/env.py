@@ -7,37 +7,64 @@ from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
-# Add the backend directory to Python's import path.
+
+# ---------------------------------------------------------------------------
+# Project paths
+# ---------------------------------------------------------------------------
+
 BASE_DIR = Path(__file__).resolve().parents[1]
+
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-# Load environment variables.
+
+# ---------------------------------------------------------------------------
+# Environment variables
+# ---------------------------------------------------------------------------
+
 load_dotenv(BASE_DIR / ".env")
 
+
+# ---------------------------------------------------------------------------
+# Application imports
+# ---------------------------------------------------------------------------
+
 from app.core.database import Base
-import app.models  # Register all SQLAlchemy models
+import app.models  # noqa: F401
+
+
+# ---------------------------------------------------------------------------
+# Alembic configuration
+# ---------------------------------------------------------------------------
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.getenv("DATABASE_URL")
-if not database_url:
-    raise RuntimeError("DATABASE_URL is not set,env.py")
 
-# Escape percent signs for ConfigParser.
+database_url = os.getenv("DATABASE_URL")
+
+if not database_url:
+    raise RuntimeError("DATABASE_URL is not set in .env")
+
+
 config.set_main_option(
     "sqlalchemy.url",
     database_url.replace("%", "%%"),
 )
 
+
 target_metadata = Base.metadata
 
 
+# ---------------------------------------------------------------------------
+# Offline migrations
+# ---------------------------------------------------------------------------
+
 def run_migrations_offline() -> None:
     """Run migrations without a live database connection."""
+
     url = config.get_main_option("sqlalchemy.url")
 
     context.configure(
@@ -53,8 +80,13 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# ---------------------------------------------------------------------------
+# Online migrations
+# ---------------------------------------------------------------------------
+
 def run_migrations_online() -> None:
     """Run migrations using a live database connection."""
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -72,9 +104,14 @@ def run_migrations_online() -> None:
 
             with context.begin_transaction():
                 context.run_migrations()
+
     finally:
         connectable.dispose()
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if context.is_offline_mode():
     run_migrations_offline()
