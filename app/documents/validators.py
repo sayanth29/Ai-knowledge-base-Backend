@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+
+from fastapi import UploadFile
+
+
+MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024  # 20 MiB
+CHUNK_SIZE = 1024 * 1024  # 1 MiB
+
+PDF_SIGNATURE = b"%PDF-"
+
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "application/octet-stream",
+}
+
+
+class DocumentUploadValidationError(Exception):
+    """Base exception for document upload validation errors."""
+
+
+class UnsupportedDocumentType(DocumentUploadValidationError):
+    """Raised when the uploaded file is not an accepted PDF."""
+
+
+class DocumentTooLarge(DocumentUploadValidationError):
+    """Raised when the uploaded file exceeds the configured size limit."""
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedDocumentUpload:
+    filename: str
+    content_type: str
+    file_size: int
+    sha256: str
+
+
+def validate_filename(filename: str | None) -> str:
+    if not filename:
+        raise DocumentUploadValidationError(
+            "A filename is required."
+        )
+
+    # Handle both Windows and Unix-style paths.
+    filename = filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+
+    if not filename:
+        raise DocumentUploadValidationError(
+            "Invalid filename."
+        )
+
+    if len(filename) > 255:
+        raise DocumentUploadValidationError(
+            "Filename must not exceed 255 characters."
+        )
+
+    if any(ord(char) < 32 or ord(char) == 127 for char in filename):
+        raise DocumentUploadValidationError(
+            "Filename contains invalid characters."
+        )
+
+    if not filename.lower().endswith(".pdf"):
+        raise UnsupportedDocumentType(
+            "Only PDF files are supported."
+        )
+
+    return filename
+
+
+async def validate_pdf_upload(
+    upload: UploadFile,
+) -> ValidatedDocumentUpload:
+
+    filename = validate_filename(upload.filename)
+
+    declared_content_type = (
+        (upload.content_type or "")
+        .split(";", 1)[0]
+        .strip()
+        .lower()
+    )
+
+    if declared_content_type not in ALLOWED_CONTENT_TYPES:
+        raise UnsupportedDocumentType(
+            "Unsupported file content type. Upload a PDF."
+        )
+
+    sha256 = hashlib.sha256()
+    file_size = 0
+    header = bytearray()
+
+    try:
+        await upload.seek(0)
+
+        while chunk := await upload.read(CHUNK_SIZE):
+
+            file_size += len(chunk)
+
+            if file_size > MAX_DOCUMENT_SIZE_BYTES:
+                raise DocumentTooLarge(
+                    "File exceeds the maximum allowed size of 20 MiB."
+                )
+
+            # Read enough bytes to validate the PDF signature.
+            if len(header) < len(PDF_SIGNATURE):
+                remaining = len(PDF_SIGNATURE) - len(header)
+                header.extend(chunk[:remaining])
+
+            sha256.update(chunk)
+
+        if file_size == 0:
+            raise UnsupportedDocumentType(
+                "Uploaded file is empty."
+            )
+
+        if bytes(header) != PDF_SIGNATURE:
+            raise UnsupportedDocumentType(
+                "Invalid PDF file signature."
+            )
+
+    finally:
+        # Important: leave the file ready for the next operation.
+        await upload.seek(0)
+
+    return ValidatedDocumentUpload(
+        filename=filename,
+        content_type="application/pdf",
+        file_size=file_size,
+        sha256=sha256.hexdigest(),
+    )

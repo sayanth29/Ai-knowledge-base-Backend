@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
     # ── Validation ───────────────────────────────────────────────
+
+    # ── AWS  ───────────────────────────────────────────────
+    AWS_REGION: str = "ap-south-1"
+    AWS_S3_BUCKET: str
+    AWS_PROFILE: str | None = None
+    
+
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def _parse_debug(cls, v: Any) -> bool:
