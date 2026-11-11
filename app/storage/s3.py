@@ -40,11 +40,13 @@ class S3Storage:
                 retries={"max_attempts": 3, "mode": "standard"},
             ),
         )
+        
 
     async def upload_file(self, file: BinaryIO, *, key: str, content_type: str) -> None:
         """Upload a file object (pass UploadFile.file, already rewound)."""
         _check_key(key)
         try:
+
             await asyncio.to_thread(
                 self.client.upload_fileobj,
                 file,
